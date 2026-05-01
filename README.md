@@ -6,7 +6,7 @@ Build narrated HD instruction videos from a JSON config file. Each scene pairs a
 
 - Python 3.10+
 - `ffmpeg` and `ffprobe` on your PATH
-- An [ElevenLabs](https://elevenlabs.io) API key
+- An [ElevenLabs](https://elevenlabs.io) API key with text-to-speech access.
 
 ## Installation
 
