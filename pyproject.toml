@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=70"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "slideshow"
+version = "0.1.0"
+description = "Build narrated HD instruction videos from a JSON config using ElevenLabs TTS and FFmpeg."
+requires-python = ">=3.10"
+dependencies = [
+    "elevenlabs>=2.0",
+    "Pillow>=10.0",
+]
+
+[project.scripts]
+slideshow = "main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["video*"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,28 @@
+{
+  "delay": 2.0,
+  "output_basename": "output",
+  "emit_vtt": true,
+  "voice": {
+    "api_key": "",
+    "voice_id": "",
+    "seed": 1
+  },
+  "intro": {
+    "title": "Title",
+    "subtitle": "Subtitle",
+    "font_path": "Times New Roman Bold",
+    "title_font_size": 30,
+    "subtitle_font_size": 28,
+    "title_color": [0, 79, 113],
+    "subtitle_color": [75, 79, 84],
+    "background_color": [255, 255, 255],
+    "logo": "logo.png",
+    "narration": "Welcome to another video."
+  },
+  "scenes": [
+    {
+      "image": "01.png",
+      "narration": "Click the button to continue."
+    }
+  ]
+}
