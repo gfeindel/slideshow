@@ -37,12 +37,13 @@ def transcode_to_wav_from_bytes(audio_bytes: bytes, source_format: str, wav_path
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
         raise SkillError(
-            f"ffmpeg is required to transcode ElevenLabs output format {source_format!r} to WAV. "
-            'Install ffmpeg or use voice.output_format="pcm_44100" to skip transcoding.'
+            f"ffmpeg is required to transcode TTS output format {source_format!r} to WAV. "
+            'Install ffmpeg or use a PCM voice.output_format ("pcm_44100" for ElevenLabs, '
+            '"pcm" for OpenAI) to skip transcoding.'
         )
     ext = source_format.split("_", 1)[0] or "audio"
     with tempfile.NamedTemporaryFile(
-        prefix="elevenlabs-", suffix=f".{ext}", delete=False
+        prefix="tts-", suffix=f".{ext}", delete=False
     ) as fh:
         tmp = Path(fh.name)
         fh.write(audio_bytes)

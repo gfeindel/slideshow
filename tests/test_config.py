@@ -179,6 +179,93 @@ def test_parse_voice_stability_at_bounds_ok():
 
 
 # ---------------------------------------------------------------------------
+# _parse_voice: providers
+# ---------------------------------------------------------------------------
+
+def test_parse_voice_default_provider_is_elevenlabs():
+    assert _parse_voice({}).provider == "elevenlabs"
+
+
+def test_parse_voice_provider_case_insensitive():
+    assert _parse_voice({"provider": " OpenAI "}).provider == "openai"
+
+
+def test_parse_voice_unknown_provider_raises():
+    with pytest.raises(SkillError, match="provider"):
+        _parse_voice({"provider": "polly"})
+
+
+def test_parse_voice_openai_defaults():
+    v = _parse_voice({"provider": "openai"})
+    assert v.model_id == "gpt-4o-mini-tts"
+    assert v.output_format == "pcm"
+    assert v.speed == 1.0
+
+
+@pytest.mark.parametrize(
+    "model", ["tts-1", "tts-1-hd", "gpt-4o-mini-tts", "gpt-4o-mini-tts-2025-12-15"]
+)
+def test_parse_voice_openai_supported_models(model):
+    assert _parse_voice({"provider": "openai", "model_id": model}).model_id == model
+
+
+def test_parse_voice_openai_unknown_model_raises():
+    with pytest.raises(SkillError, match="model_id"):
+        _parse_voice({"provider": "openai", "model_id": "eleven_multilingual_v2"})
+
+
+def test_parse_voice_openai_invalid_output_format_raises():
+    with pytest.raises(SkillError, match="output_format"):
+        _parse_voice({"provider": "openai", "output_format": "mp3_44100_128"})
+
+
+@pytest.mark.parametrize("speed", [0.24, 2.0, 4.0])
+def test_parse_voice_openai_speed_in_range(speed):
+    assert _parse_voice({"provider": "openai", "speed": speed}).speed == speed
+
+
+@pytest.mark.parametrize("speed", [0.2, 4.1])
+def test_parse_voice_openai_speed_out_of_range_raises(speed):
+    with pytest.raises(SkillError, match="speed"):
+        _parse_voice({"provider": "openai", "speed": speed})
+
+
+def test_parse_voice_elevenlabs_speed_out_of_range_raises():
+    with pytest.raises(SkillError, match="speed"):
+        _parse_voice({"speed": 2.0})
+
+
+def test_parse_voice_openai_instructions_kept_for_mini_tts():
+    v = _parse_voice({
+        "provider": "openai",
+        "model_id": "gpt-4o-mini-tts-2025-12-15",
+        "instructions": "Calm and friendly.",
+    })
+    assert v.instructions == "Calm and friendly."
+
+
+def test_parse_voice_openai_instructions_dropped_for_tts1(capsys):
+    v = _parse_voice({"provider": "openai", "model_id": "tts-1-hd", "instructions": "Calm."})
+    assert v.instructions is None
+    assert "instructions" in capsys.readouterr().err
+
+
+def test_parse_voice_openai_ignores_elevenlabs_fields_with_warning(capsys):
+    v = _parse_voice({"provider": "openai", "stability": 0.5, "seed": 3})
+    assert v.stability is None
+    assert v.seed is None
+    err = capsys.readouterr().err
+    assert "voice.stability" in err
+    assert "voice.seed" in err
+
+
+def test_parse_voice_elevenlabs_instructions_dropped_with_warning(capsys):
+    v = _parse_voice({"instructions": "Calm."})
+    assert v.instructions is None
+    assert "instructions" in capsys.readouterr().err
+
+
+# ---------------------------------------------------------------------------
 # _parse_intro
 # ---------------------------------------------------------------------------
 
@@ -444,3 +531,28 @@ def test_parse_project_sanitizes_basename(tmp_path):
     project = parse_project(raw)
     assert " " not in project.output_basename
     assert "!" not in project.output_basename
+
+
+def test_parse_project_openai_narration_too_long_raises(tmp_path):
+    img = _write_png(tmp_path / "img.png")
+    raw = {
+        "voice": {"provider": "openai"},
+        "scenes": [{"image": str(img), "narration": "a" * 4097}],
+    }
+    with pytest.raises(SkillError, match="Scene 1"):
+        parse_project(raw)
+
+
+def test_parse_project_openai_narration_at_limit_ok(tmp_path):
+    img = _write_png(tmp_path / "img.png")
+    raw = {
+        "voice": {"provider": "openai"},
+        "scenes": [{"image": str(img), "narration": "a" * 4096}],
+    }
+    assert len(parse_project(raw).scenes) == 1
+
+
+def test_parse_project_elevenlabs_long_narration_not_limited(tmp_path):
+    img = _write_png(tmp_path / "img.png")
+    raw = {"scenes": [{"image": str(img), "narration": "a" * 5000}]}
+    assert len(parse_project(raw).scenes) == 1

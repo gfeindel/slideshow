@@ -15,6 +15,21 @@ DEFAULT_TITLE_COLOR = (0, 0, 0)
 DEFAULT_SUBTITLE_COLOR = (30, 30, 30)
 DEFAULT_MODEL_ID = "eleven_multilingual_v2"
 DEFAULT_LANGUAGE = "en"
+DEFAULT_PROVIDER = "elevenlabs"
+DEFAULT_OUTPUT_FORMAT = "mp3_44100_128"
+
+PROVIDERS = ("elevenlabs", "openai")
+
+OPENAI_MODELS = ("tts-1", "tts-1-hd", "gpt-4o-mini-tts", "gpt-4o-mini-tts-2025-12-15")
+OPENAI_INSTRUCTION_MODELS = ("gpt-4o-mini-tts", "gpt-4o-mini-tts-2025-12-15")
+OPENAI_OUTPUT_FORMATS = ("mp3", "opus", "aac", "flac", "wav", "pcm")
+OPENAI_DEFAULT_MODEL_ID = "gpt-4o-mini-tts"
+OPENAI_DEFAULT_OUTPUT_FORMAT = "pcm"
+OPENAI_DEFAULT_VOICE = "alloy"
+OPENAI_PCM_SAMPLE_RATE = 24000
+OPENAI_MAX_INPUT_CHARS = 4096
+OPENAI_SPEED_RANGE = (0.24, 4.0)
+ELEVENLABS_SPEED_RANGE = (0.7, 1.2)
 
 _WINDOWS_FONT_CANDIDATES = [
     "C:/Windows/Fonts/calibrib.ttf",
@@ -30,6 +45,7 @@ class SkillError(Exception):
 
 @dataclass
 class VoiceConfig:
+    provider: str = DEFAULT_PROVIDER
     api_key: Optional[str] = None
     voice_id: Optional[str] = None
     model_id: str = DEFAULT_MODEL_ID
@@ -40,8 +56,9 @@ class VoiceConfig:
     style: Optional[float] = None
     use_speaker_boost: Optional[bool] = None
     seed: Optional[int] = None
-    output_format: str = "mp3_44100_128"
+    output_format: str = DEFAULT_OUTPUT_FORMAT
     base_url: Optional[str] = None
+    instructions: Optional[str] = None  # OpenAI gpt-4o-mini-tts models only
 
 
 @dataclass
