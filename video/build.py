@@ -13,12 +13,12 @@ from .ffmpeg import (
 )
 from .models import ProjectConfig, Scene, SkillError
 from .title_slide import generate_title_slide
-from .tts import ElevenLabsTTS
+from .tts import create_tts
 
 
 def build_video(project: ProjectConfig, output_dir: Path) -> Dict[str, Any]:
     ffmpeg, _ = ensure_ffmpeg_tools()
-    provider = ElevenLabsTTS(project.voice)
+    provider = create_tts(project.voice)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     video_path = output_dir / f"{project.output_basename}.mp4"

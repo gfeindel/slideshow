@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -12,10 +13,21 @@ from .models import (
     DEFAULT_HEIGHT,
     DEFAULT_LANGUAGE,
     DEFAULT_MODEL_ID,
+    DEFAULT_OUTPUT_FORMAT,
+    DEFAULT_PROVIDER,
     DEFAULT_SPEED,
     DEFAULT_SUBTITLE_COLOR,
     DEFAULT_TITLE_COLOR,
     DEFAULT_WIDTH,
+    ELEVENLABS_SPEED_RANGE,
+    OPENAI_DEFAULT_MODEL_ID,
+    OPENAI_DEFAULT_OUTPUT_FORMAT,
+    OPENAI_INSTRUCTION_MODELS,
+    OPENAI_MAX_INPUT_CHARS,
+    OPENAI_MODELS,
+    OPENAI_OUTPUT_FORMATS,
+    OPENAI_SPEED_RANGE,
+    PROVIDERS,
     IntroConfig,
     ProjectConfig,
     Scene,
@@ -45,11 +57,23 @@ def sanitize_basename(name: str) -> str:
     return cleaned or "instruction-video"
 
 
+def _warn(message: str) -> None:
+    print(f"WARNING: {message}", file=sys.stderr)
+
+
 def _parse_voice(v: Dict[str, Any]) -> VoiceConfig:
+    provider = str(v.get("provider", DEFAULT_PROVIDER)).strip().lower()
+    if provider not in PROVIDERS:
+        raise SkillError(
+            f"voice.provider must be one of: {', '.join(PROVIDERS)} (got {provider!r})."
+        )
+    is_openai = provider == "openai"
+
     voice = VoiceConfig(
+        provider=provider,
         api_key=v.get("api_key"),
         voice_id=v.get("voice_id"),
-        model_id=str(v.get("model_id", DEFAULT_MODEL_ID)),
+        model_id=str(v.get("model_id", OPENAI_DEFAULT_MODEL_ID if is_openai else DEFAULT_MODEL_ID)),
         language=str(v.get("language", DEFAULT_LANGUAGE)),
         speed=float(v.get("speed", DEFAULT_SPEED)),
         stability=v.get("stability"),
@@ -57,19 +81,62 @@ def _parse_voice(v: Dict[str, Any]) -> VoiceConfig:
         style=v.get("style"),
         use_speaker_boost=v.get("use_speaker_boost"),
         seed=int(v["seed"]) if v.get("seed") is not None else None,
-        output_format=str(v.get("output_format", "mp3_44100_128")),
+        output_format=str(
+            v.get("output_format", OPENAI_DEFAULT_OUTPUT_FORMAT if is_openai else DEFAULT_OUTPUT_FORMAT)
+        ),
         base_url=v.get("base_url"),
+        instructions=v.get("instructions") or None,
     )
     if voice.speed <= 0:
         raise SkillError("voice.speed must be greater than 0.")
-    for field_name, val in [
-        ("voice.stability", voice.stability),
-        ("voice.similarity_boost", voice.similarity_boost),
-        ("voice.style", voice.style),
-    ]:
-        if val is not None:
-            clamp(float(val), 0.0, 1.0, field_name)
+
+    if is_openai:
+        _validate_openai_voice(voice)
+    else:
+        if voice.speed != DEFAULT_SPEED:
+            clamp(voice.speed, *ELEVENLABS_SPEED_RANGE, "voice.speed")
+        for field_name, val in [
+            ("voice.stability", voice.stability),
+            ("voice.similarity_boost", voice.similarity_boost),
+            ("voice.style", voice.style),
+        ]:
+            if val is not None:
+                clamp(float(val), 0.0, 1.0, field_name)
+        if voice.instructions is not None:
+            _warn("voice.instructions is only supported by the openai provider; ignoring it.")
+            voice.instructions = None
     return voice
+
+
+def _validate_openai_voice(voice: VoiceConfig) -> None:
+    if voice.model_id not in OPENAI_MODELS:
+        raise SkillError(
+            f"voice.model_id {voice.model_id!r} is not a supported OpenAI TTS model. "
+            f"Use one of: {', '.join(OPENAI_MODELS)}."
+        )
+    if voice.output_format not in OPENAI_OUTPUT_FORMATS:
+        raise SkillError(
+            f"voice.output_format {voice.output_format!r} is not supported by OpenAI. "
+            f"Use one of: {', '.join(OPENAI_OUTPUT_FORMATS)}."
+        )
+    clamp(voice.speed, *OPENAI_SPEED_RANGE, "voice.speed")
+
+    if voice.instructions is not None and voice.model_id not in OPENAI_INSTRUCTION_MODELS:
+        _warn(f"voice.instructions is not supported by {voice.model_id}; ignoring it.")
+        voice.instructions = None
+
+    elevenlabs_only = [
+        name
+        for name in ("stability", "similarity_boost", "style", "use_speaker_boost", "seed")
+        if getattr(voice, name) is not None
+    ]
+    if elevenlabs_only:
+        _warn(
+            "These voice settings only apply to ElevenLabs and are ignored by OpenAI: "
+            + ", ".join(f"voice.{name}" for name in elevenlabs_only)
+        )
+        for name in elevenlabs_only:
+            setattr(voice, name, None)
 
 
 def _parse_intro(intro_raw: Dict[str, Any]) -> IntroConfig:
@@ -189,6 +256,18 @@ def parse_project(raw: Dict[str, Any]) -> ProjectConfig:
     if scenes_raw is not None and not isinstance(scenes_raw, list):
         raise SkillError("scenes must be a list.")
 
+    scenes = _parse_scenes(scenes_raw or [])
+
+    if voice.provider == "openai":
+        labelled = [("intro.narration", intro.narration)] if intro else []
+        labelled += [(f"Scene {i} narration", s.narration) for i, s in enumerate(scenes, start=1)]
+        for label, text in labelled:
+            if len(text) > OPENAI_MAX_INPUT_CHARS:
+                raise SkillError(
+                    f"{label} is {len(text)} characters; OpenAI TTS accepts at most "
+                    f"{OPENAI_MAX_INPUT_CHARS}."
+                )
+
     return ProjectConfig(
         delay=delay,
         output_basename=output_basename,
@@ -197,6 +276,6 @@ def parse_project(raw: Dict[str, Any]) -> ProjectConfig:
         height=height,
         fps=fps,
         voice=voice,
-        scenes=_parse_scenes(scenes_raw or []),
+        scenes=scenes,
         intro=intro,
     )

@@ -8,7 +8,12 @@ from pathlib import Path
 from typing import Any, Deque, Dict, Optional
 
 from .ffmpeg import transcode_to_wav_from_bytes
-from .models import SkillError, VoiceConfig
+from .models import (
+    OPENAI_DEFAULT_VOICE,
+    OPENAI_PCM_SAMPLE_RATE,
+    SkillError,
+    VoiceConfig,
+)
 
 
 def _write_pcm_as_wav(pcm_bytes: bytes, sample_rate: int, wav_path: Path) -> None:
@@ -129,3 +134,79 @@ class ElevenLabsTTS:
 
         if not wav_path.exists() or wav_path.stat().st_size == 0:
             raise SkillError("ElevenLabs reported success but produced no audio file.")
+
+
+class OpenAITTS:
+    name = "openai"
+
+    def __init__(self, voice: VoiceConfig) -> None:
+        try:
+            from openai import OpenAI
+        except ImportError as exc:
+            raise SkillError(
+                "The 'openai' package is required. Install it with: pip install openai"
+            ) from exc
+
+        api_key = (voice.api_key or os.environ.get("OPENAI_API_KEY", "")).strip()
+        if not api_key:
+            raise SkillError(
+                "OpenAI requires an API key. "
+                "Set voice.api_key or the OPENAI_API_KEY environment variable."
+            )
+
+        self.voice_id = (
+            voice.voice_id or os.environ.get("OPENAI_TTS_VOICE", "") or OPENAI_DEFAULT_VOICE
+        ).strip()
+
+        client_kwargs: Dict[str, Any] = {"api_key": api_key}
+        if voice.base_url:
+            client_kwargs["base_url"] = voice.base_url.rstrip("/")
+        self._client = OpenAI(**client_kwargs)
+
+    def synthesize(
+        self,
+        text: str,
+        wav_path: Path,
+        voice: VoiceConfig,
+        previous_text: Optional[str] = None,
+        next_text: Optional[str] = None,
+    ) -> None:
+        # previous_text/next_text are accepted for interface parity with ElevenLabsTTS;
+        # OpenAI has no equivalent request-stitching feature.
+        kwargs: Dict[str, Any] = {
+            "model": voice.model_id,
+            "voice": self.voice_id,
+            "input": text,
+            "response_format": voice.output_format,
+        }
+        if not math.isclose(voice.speed, 1.0, rel_tol=1e-6):
+            kwargs["speed"] = voice.speed
+        if voice.instructions:
+            kwargs["instructions"] = voice.instructions
+
+        try:
+            response = self._client.audio.speech.create(**kwargs)
+            audio_bytes = response.content
+        except Exception as exc:
+            raise SkillError(f"OpenAI synthesis failed: {exc}") from exc
+
+        if not audio_bytes:
+            raise SkillError("OpenAI returned an empty audio response.")
+
+        fmt = voice.output_format
+        if fmt == "pcm":
+            _write_pcm_as_wav(audio_bytes, OPENAI_PCM_SAMPLE_RATE, wav_path)
+        else:
+            # Transcode even for "wav": streamed WAV headers may not carry a valid length.
+            transcode_to_wav_from_bytes(audio_bytes, fmt, wav_path)
+
+        if not wav_path.exists() or wav_path.stat().st_size == 0:
+            raise SkillError("OpenAI reported success but produced no audio file.")
+
+
+def create_tts(voice: VoiceConfig):
+    if voice.provider == "openai":
+        return OpenAITTS(voice)
+    if voice.provider == "elevenlabs":
+        return ElevenLabsTTS(voice)
+    raise SkillError(f"Unknown TTS provider: {voice.provider!r}")

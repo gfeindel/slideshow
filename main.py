@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Build a narrated HD instruction video from a JSON config file using ElevenLabs TTS.
+"""Build a narrated HD instruction video from a JSON config file using ElevenLabs or OpenAI TTS.
 
 Requires:
-  pip install elevenlabs Pillow
+  pip install elevenlabs openai Pillow
 
 Usage:
   python build-instruction-video.py --config config.json
@@ -19,18 +19,23 @@ Top-level fields:
   resolution        { "width": 1920, "height": 1080 }
 
 voice object:
-  api_key           ElevenLabs API key (fallback: ELEVENLABS_API_KEY env var)
-  voice_id          Voice ID (fallback: ELEVENLABS_VOICE_ID env var)
-  model_id          default "eleven_multilingual_v2"
-  language          BCP-47 code, default "en"
-  speed             0.7–1.2, default 1.0
-  stability         0.0–1.0
-  similarity_boost  0.0–1.0
-  style             0.0–1.0
-  use_speaker_boost bool
-  seed              integer — pin randomness for reproducible output
-  output_format     default "mp3_44100_128"; use "pcm_44100" to skip ffmpeg
-  base_url          override ElevenLabs API base URL
+  provider          "elevenlabs" (default) or "openai"
+  api_key           API key (fallback: ELEVENLABS_API_KEY / OPENAI_API_KEY env var)
+  voice_id          ElevenLabs voice ID (fallback: ELEVENLABS_VOICE_ID env var), or
+                    OpenAI voice name (fallback: OPENAI_TTS_VOICE env var, then "alloy")
+  model_id          ElevenLabs default "eleven_multilingual_v2"; OpenAI default
+                    "gpt-4o-mini-tts" (also tts-1, tts-1-hd, gpt-4o-mini-tts-2025-12-15)
+  language          BCP-47 code, default "en" (ElevenLabs only)
+  speed             ElevenLabs 0.7–1.2, OpenAI 0.24–4.0; default 1.0
+  stability         0.0–1.0 (ElevenLabs only)
+  similarity_boost  0.0–1.0 (ElevenLabs only)
+  style             0.0–1.0 (ElevenLabs only)
+  use_speaker_boost bool (ElevenLabs only)
+  seed              integer — pin randomness for reproducible output (ElevenLabs only)
+  instructions      Tone/style prompt (OpenAI gpt-4o-mini-tts models only)
+  output_format     ElevenLabs default "mp3_44100_128" ("pcm_44100" skips ffmpeg);
+                    OpenAI default "pcm" (also mp3, opus, aac, flac, wav)
+  base_url          override the provider's API base URL
 
 intro object (generates a title slide as the first scene):
   title             Large centered heading
@@ -63,12 +68,12 @@ from video.build import build_video
 from video.config import parse_project, read_json_source
 from video.ffmpeg import ensure_ffmpeg_tools
 from video.models import SkillError
-from video.tts import ElevenLabsTTS
+from video.tts import create_tts
 
 
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Build an HD MP4 instruction video from a JSON config using ElevenLabs TTS."
+        description="Build an HD MP4 instruction video from a JSON config using ElevenLabs or OpenAI TTS."
     )
     parser.add_argument("--config", type=Path, required=True, help="Path to the JSON config file.")
     parser.add_argument(
@@ -91,13 +96,14 @@ def main(argv: Optional[List[str]] = None) -> int:
         raw = read_json_source(args.config)
         project = parse_project(raw)
         ffmpeg, ffprobe = ensure_ffmpeg_tools()
-        provider = ElevenLabsTTS(project.voice)
+        provider = create_tts(project.voice)
 
         if args.check:
             print(json.dumps({
                 "ok": True,
                 "message": "Config and environment look valid.",
                 "tts_engine": provider.name,
+                "tts_model": project.voice.model_id,
                 "ffmpeg": ffmpeg,
                 "ffprobe": ffprobe,
                 "scene_count": len(project.scenes),
